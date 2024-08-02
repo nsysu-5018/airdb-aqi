@@ -29,7 +29,7 @@ pydantic-settings==2.4.0
 pydantic_core==2.20.1
 pyee==11.1.0
 Pygments==2.18.0
-pytest==8.2.2
+pytest==8.3.2
 pytest-base-url==2.1.0
 pytest-playwright==0.5.1
 python-dateutil==2.9.0.post0
