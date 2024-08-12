@@ -1,12 +1,28 @@
+from apscheduler.schedulers.background import BackgroundScheduler
 from config import settings
+from contextlib import asynccontextmanager
 import database
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Query
 import pandas as pd
 import station
+import subprocess
 import EMA_utils as EMA
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    check_update()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+scheduler = BackgroundScheduler()
+
+
+@scheduler.scheduled_job('cron', hour = 1, minute = 0)
+def check_update():
+    subprocess.run(['pytest',  '/code/app/updater.py'])
 
 
 responses = {
