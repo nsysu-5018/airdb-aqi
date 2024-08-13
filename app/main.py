@@ -13,14 +13,16 @@ import EMA_utils as EMA
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     check_update()
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_update, 'cron', hour = 1, minute = 0)
+    scheduler.start()
     yield
+    scheduler.shutdown()
 
 
 app = FastAPI(lifespan=lifespan)
-scheduler = BackgroundScheduler()
 
 
-@scheduler.scheduled_job('cron', hour = 1, minute = 0)
 def check_update():
     subprocess.run(['pytest',  '/code/app/updater.py'])
 
