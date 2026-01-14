@@ -40,6 +40,27 @@ docker exec -it aqi-container /bin/bash
 
 The application expects the SQLite database at `/mnt/aqi-app/airdb.db` inside the container. The docker run command above mounts your local `airdb.db` file to this location automatically.
 
+#### Database Access
+
+Enter the container and then execute the following command:
+
+```bash
+docker exec -it aqi-container sqlite3 /mnt/aqi-app/airdb.db
+```
+
+##### Common SQLite Commands:
+
+```sql
+-- List all tables
+.tables
+
+-- View first 10 records
+SELECT * FROM aqi LIMIT 10;
+
+-- Exit SQLite CLI
+.quit
+```
+
 #### aqi table schema
 
 ```sql

@@ -10,4 +10,6 @@ RUN playwright install-deps
 
 RUN playwright install
 
+RUN apt-get update && apt-get install -y sqlite3 && rm -rf /var/lib/apt/lists/*
+
 CMD ["fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
