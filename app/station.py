@@ -1,4 +1,4 @@
-from config import settings
+from config import logger
 import re
 
 Daliao = ["大寮"]
@@ -22,17 +22,13 @@ dist = Daliao+Siaogang+Renwu+Zuoying+Linyuan+Cianjin+Cianjhen+Meinong+Nanzih+Fon
 # station_id_mapping("高雄市彌陀鄉")->橋頭
 
 def station_id_mapping(addr):    
-    debug = settings.debug
-    if debug:
-        print(addr)
+    logger.debug(f"station_id_mapping - addr: {addr}")
     for d in dist:
         pat = d+"[鄉鎮市區]?"
         sta = re.search(pat, addr)
-        if debug:
-            print(pat)
+        logger.debug(f"station_id_mapping - pat: {pat}")
         if sta:
-            if debug:
-                print(sta)
+            logger.debug(f"station_id_mapping - sta: {sta}")
             sta = sta.group(0)
             sta = re.sub("[鄉鎮市區]$","",sta)
             for station in stations:

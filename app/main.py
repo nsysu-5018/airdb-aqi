@@ -1,5 +1,5 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from config import settings
+from config import logger
 from contextlib import asynccontextmanager
 import database
 from datetime import datetime, timedelta
@@ -58,14 +58,13 @@ def get_aqi_by_addr_date(addr: str = Query(description="高雄市鼓山區蓮海
                         date: str = Query(description="2023-04-07", regex="^\d{4}\-(0[1-9]|1[012])\-(0[1-9]|[12][0-9]|3[01])$"), \
                         period: int = Query(desciption="30", default=30, gt=0)):
     # show all input parameters
-    print("(Input)addr:", addr)
-    print("(Input)date:", date)
-    print("(Input)period:", period)
+    logger.info(f"aqi - (Input) addr: {addr}")
+    logger.info(f"aqi - (Input) date: {date}")
+    logger.info(f"aqi - (Input) period: {period}")
 
     # get sitename by addr input
     sitename = station.station_id_mapping(addr)
-    if settings.debug:
-        print("sitename:", sitename)
+    logger.debug(f"sitename: {sitename}")
     if sitename is None:
             raise HTTPException(status_code=404, detail="Can't find station.")
 
@@ -79,14 +78,12 @@ def get_aqi_by_addr_date(addr: str = Query(description="高雄市鼓山區蓮海
     end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
     start_date_obj = end_date_obj - timedelta(days=period-1)
     start_date = start_date_obj.strftime('%Y-%m-%d')
-    if settings.debug:
-        print("start_date:", start_date)
-        print("end_date:", end_date)
+    logger.debug(f"start_date: {start_date}")
+    logger.debug(f"end_date: {end_date}")
     
     # get aqi values from database
     aqi_values = database.get_aqi_by_addr_date(sitename, start_date, end_date)
-    if settings.debug:
-        print("aqi_values:", aqi_values)
+    logger.debug(f"aqi_values: {aqi_values}")
     if aqi_values is None or len(aqi_values) == 0:
         raise HTTPException(status_code=404, detail="Can't find data between " + start_date + " and " + end_date + " in database.")
 
@@ -99,10 +96,9 @@ def get_aqi_by_addr_date(addr: str = Query(description="高雄市鼓山區蓮海
     result = EMA.calculateEMA(df_values, alpha)
     if result is None:
             raise HTTPException(status_code=404, detail="Failed to calcuale EMA.")
-    if settings.debug:
-        print("days:", days)
-        print("alpha:", alpha)
-        print("EMA result:\n" + str(result))
+    logger.debug(f"days: {days}")
+    logger.debug(f"alpha: {alpha}")
+    logger.debug(f"EMA result:\n {str(result)}")
     
     return {"so2": result[0],
             "co": result[1],
