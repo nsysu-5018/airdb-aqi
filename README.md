@@ -50,6 +50,14 @@ docker exec -it aqi-container sqlite3 /mnt/aqi-app/airdb.db
 
 ##### Common SQLite Commands:
 
+Inside the container shell, open the database with:
+
+```bash
+sqlite3 /mnt/aqi-app/airdb.db
+```
+
+Once the SQLite prompt opens, you can run commands like these to inspect the database:
+
 ```sql
 -- List all tables
 .tables
