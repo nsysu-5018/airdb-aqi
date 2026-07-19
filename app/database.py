@@ -27,12 +27,13 @@ def get_aqi_by_addr_date(addr: str, start_date: str, end_date: str):
 
 
 def insert_aqi_from_df(df):
+    cols = ["sitename", "datacreationdate", "so2", "co", "o3", "pm10", "pm2.5", "no2", "nox", "no"]
+    quoted_cols = [f'"{c}"' for c in cols]
     cur.executemany(
-        "INSERT OR IGNORE INTO aqi VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        df.values.tolist(),
+        f"INSERT OR IGNORE INTO aqi ({', '.join(quoted_cols)}) VALUES({', '.join(['?']*len(cols))})",
+        df[cols].values.tolist(),
     )
     conn.commit()
-    return
 
 
 def get_max_datacreationdate():

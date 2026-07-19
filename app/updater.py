@@ -1,18 +1,16 @@
-import codecs
-import csv
 import database
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import pandas as pd
 from playwright.sync_api import Page
 import pytz
 
 
-def do_action(page, start_time, end_time, filename):
+def download_air_quality_csv(page: Page, start_date: date, end_date: date, output_file: str):
     # Navigate to url
     page.goto("https://airtw.moenv.gov.tw/CHT/Query/InsValue.aspx")
 
     # 1. 填入測站
-    # Click on '地區'
+    # Click on '測站' input field
     page.locator("#a_site").click()
     # Click on '高屏空品區'
     page.locator("#ui-id-9").click()
@@ -41,170 +39,104 @@ def do_action(page, start_time, end_time, filename):
     # Click on '林園'
     page.locator("#site32").click()
     # Click on '確認'
-    page.locator('input[value="確認"]').click()
+    page.locator('#btn_ConfirmSites').click()
 
     # 2. 填入測項
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'CO'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-CO"]').click()
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'O3'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-O3"]').click()
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'NO'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-NO"]').click()
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'SO2'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-SO2"]').click()
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'NO2'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-NO2"]').click()
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'NOx'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-NOx"]').click()
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'PM2.5'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-PM2.5"]').click()
-    # Click on '測項'
-    page.locator(".select2-selection").click()
-    # Click on 'PM10'
-    page.locator('[id^=select2-ddl_Item-result-][id$="-PM10"]').click()
+    # Click on SO2, CO, O3, PM10, PM2.5, NO2, NOx, NO
+    page.locator('#ddl_Item').select_option(['SO2', 'CO', 'O3', 'PM10', 'PM2.5', 'NO2', 'NOx', 'NO'], force=True);
 
     # 3. 填入開始時間
-    # Click on '開始時間'
-    page.locator("#CPH_Content_txt_Stime").click()
     # Type on '開始時間'
-    page.locator("#CPH_Content_txt_Stime").fill(start_time)
+    start_date_str = start_date.strftime("%Y/%m/%d")
+    page.locator("#CPH_Content_txt_Stime").fill(start_date_str)
 
     # 4. 填入結束時間
-    # Click on '結束時間'
-    page.locator("#CPH_Content_txt_Etime").click()
     # Type on '結束時間'
-    page.locator("#CPH_Content_txt_Etime").fill(end_time)
+    end_date_str = end_date.strftime("%Y/%m/%d")
+    page.locator("#CPH_Content_txt_Etime").fill(end_date_str)
 
-    # 5. 下載
+    # 5. Click on '查詢'
+    page.locator("#btnQuery").click()
+
+    # 6. 下載
     # Click on '下載'
     with page.expect_download() as download_info:
-        page.locator("#CPH_Content_btnDownload").click()
+        page.locator("#CPH_Content_btn_download").click()
     download = download_info.value
-    download.save_as(filename)
+    download.save_as(output_file)
 
+def process_data(csv_file: str):
+    # Convert csv to dataframe for easy data processing
+    df = pd.read_csv(csv_file, skiprows=2)
 
-def csv2utf8(filename):
-    # big5 to utf-8
-    input_file = filename
-    output_file = input_file.replace(".csv", "_utf8.csv")
+    # Format date column from yyyy/mm/dd to yyyy-mm-dd
+    date_column = '日期'
+    df[date_column] = pd.to_datetime(df[date_column], format='%Y/%m/%d').dt.strftime('%Y-%m-%d')
 
-    with codecs.open(input_file, "r", encoding="big5") as file:
-        csv_data = csv.reader(file)
+    hour_columns = [ f'{h:02d}' for h in range(24)]
+    # coerce only the hour columns — errors='coerce' replaces any non-numeric values with NaN
+    df[hour_columns] = df[hour_columns].apply(pd.to_numeric, errors='coerce')
 
-        # drop unnecessary information
-        header = next(csv_data)
-        header = next(csv_data)
+    # Average the row among the day (rounds the values to 2 decimal places.)
+    df['average'] = df[hour_columns].mean(axis=1, skipna=True).round(2) # axis=1 averages in a row-wise direction
 
-        with open(output_file, "w", encoding="utf-8", newline="") as output:
-            csv_writer = csv.writer(output)
+    # Drop hour columns
+    df = df.drop(columns=hour_columns)
 
-            for row in csv_data:
-                csv_writer.writerow(row)
+    # Groups rows by the combination of 測站 and 日期, spreads the distinct 測項 values (SO2, CO, O3...) into their own columns, and fills each with the corresponding average
+    #   By perform the grouping, the columns '測站', '日期' becomes a MultiIndex and not 2 columns
+    df = df.pivot(index=['測站', date_column], columns='測項', values='average')
 
-    return output_file
+    # Reorder the air quality values to the database column order
+    df = df[['SO2', 'CO', 'O3', 'PM10', 'PM2.5', 'NO2', 'NOx', 'NO']]
 
+    # Brings 測站/日期 back as real columns
+    df = df.reset_index()
 
-def csv2df(filename):
-    # read data from csv
-    # post-processing data and save into dataframe
-    df = pd.read_csv(filename)
-    df.set_index(["測站", "日期", "測項"], inplace=True)
-    df = df.apply(pd.to_numeric, errors="coerce")
-    df["average"] = df.mean(axis=1).round(2)
-    df.reset_index(inplace=True)
-    df = df[["測站", "日期", "測項", "average"]]
+    # Rename columns to match database columns
+    df = df.rename(columns={
+        "測站": "sitename",
+        "日期": "datacreationdate",
+        "SO2": "so2",
+        "CO": "co",
+        "O3": "o3",
+        "PM10": "pm10",
+        "PM2.5": "pm2.5",
+        "NO2": "no2",
+        "NOx": "nox",
+        "NO": "no",
+    })
 
-    keys = [
-        "sitename",
-        "datacreationdate",
-        "so2",
-        "co",
-        "o3",
-        "pm10",
-        "pm2.5",
-        "no2",
-        "nox",
-        "no",
-    ]
-    df_result = pd.DataFrame(columns=keys)
+    # removes the "測項" label from the columns axis metadata
+    df.columns.name = None
 
-    grouped_df = df.groupby(["測站", "日期"])
-    for group_name, group_data in grouped_df:
+    # temporary check
+    # df.to_csv(f"temp.csv", index=False)
 
-        so2_avg = group_data[group_data["測項"] == "SO2"]["average"].values[0]
-        co_avg = group_data[group_data["測項"] == "CO"]["average"].values[0]
-        o3_avg = group_data[group_data["測項"] == "O3"]["average"].values[0]
-        pm10_avg = group_data[group_data["測項"] == "PM10"]["average"].values[0]
-        pm25_avg = group_data[group_data["測項"] == "PM2.5"]["average"].values[0]
-        no2_avg = group_data[group_data["測項"] == "NO2"]["average"].values[0]
-        nox_avg = group_data[group_data["測項"] == "NOx"]["average"].values[0]
-        no_avg = group_data[group_data["測項"] == "NO"]["average"].values[0]
-
-        new_row = {
-            "sitename": group_name[0],
-            "datacreationdate": group_name[1],
-            "so2": so2_avg,
-            "co": co_avg,
-            "o3": o3_avg,
-            "pm10": pm10_avg,
-            "pm2.5": pm25_avg,
-            "no2": no2_avg,
-            "nox": nox_avg,
-            "no": no_avg,
-        }
-        df_result.loc[len(df_result)] = new_row
-
-    df_result["datacreationdate"] = pd.to_datetime(
-        df_result["datacreationdate"]
-    ).dt.strftime("%Y-%m-%d")
-    df_result.sort_values(by=["datacreationdate"], inplace=True)
-    return df_result
+    return df
 
 
 def test_start(page: Page):
-    output_file = '/tmp/tmp.csv'
+    downloaded_air_quality_csv_file = '/tmp/air-quality.csv'
     taipei_tz = pytz.timezone('Asia/Taipei')
-    print("Running task_daily_update_db...")
-    print(datetime.now(tz=taipei_tz))
-
-    # check if database is up to date
-    db_max_date = database.get_max_datacreationdate()[0]
-    db_max_date = db_max_date.replace("-", "/")
-    today_date_obj = datetime.now(tz=taipei_tz).date()
-
+    today = datetime.now(tz=taipei_tz).date()
+    print(f"Running daily airdb.db at {today}")
+    
     # start date is the next day of db_max_date
-    start_date_obj = datetime.strptime(db_max_date, '%Y/%m/%d').date() + timedelta(days=1)
-    start_date = start_date_obj.strftime('%Y/%m/%d')
+    db_max_date_str = database.get_max_datacreationdate()[0]
+    db_max_date = date.fromisoformat(db_max_date_str)
+    start_date = db_max_date + timedelta(days=1)
 
     # end date is yesterday
     # because there is missing value today
-    end_date_obj = today_date_obj - timedelta(days=1)
-    end_date = end_date_obj.strftime('%Y/%m/%d')
+    end_date = today - timedelta(days=1)
 
     if db_max_date != end_date:
-        # mean database is not up to date
         print("Update database...")
-        print(start_date, "-", end_date)
-        do_action(page, start_date, end_date, output_file)
-        output_file_utf8 = csv2utf8(output_file)
-        df = csv2df(output_file_utf8)
-        
-        if df is not None:
-            database.insert_aqi_from_df(df)
-            print("Finish update database.")
+        print(f"{start_date} - {end_date}")
+        download_air_quality_csv(page, start_date, end_date, downloaded_air_quality_csv_file)
+        processed_air_quality_dataframe = process_data(downloaded_air_quality_csv_file)
+        database.insert_aqi_from_df(processed_air_quality_dataframe)
+        print("Finish update database.")
     else:
         print("Database is up to date.")
